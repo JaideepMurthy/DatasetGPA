@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DatasetGPA - AI-Powered Dataset Quality Analyzer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useCallback, useEffect } = React;
+        const { Upload, FileText, AlertCircle, Database, ChevronDown, ChevronUp, AlertTriangle, Activity, Target, Shield, Sparkles, Download, Key, Eye, EyeOff } = lucide;
+
+        function Icon({ name, ...props }) {
+            const LucideIcon = lucide[name];
+            return LucideIcon ? React.createElement(LucideIcon, props) : null;
+        }
+
+        function DatasetGPA() {
+            const [file, setFile] = useState(null);
+            const [data, setData] = useState([]);
+            const [headers, setHeaders] = useState([]);
+            const [fileInfo, setFileInfo] = useState(null);
+            const [isDragging, setIsDragging] = useState(false);
+            const [error, setError] = useState(null);
+            const [loading, setLoading] = useState(false);
+            const [currentPage, setCurrentPage] = useState(1);
+            const [analysisResults, setAnalysisResults] = useState(null);
+            const [apiKey, setApiKey] = useState('');
+            const [showApiKey, setShowApiKey] = useState(false);
+            const [aiInsights, setAiInsights] = useState(null);
+            const [generatingInsights, setGeneratingInsights] = useState(false);
+            const [expanded, setExpanded] = useState({ score: true, missing: true, outliers: true, imbalance: true, leakage: true, insights: false, preview: false });
+            const rowsPerPage = 10;
+
+            useEffect(() => {
+                const savedKey = localStorage.getItem('claude_api_key');
+                if (savedKey) setApiKey(savedKey);
+            }, []);
+
+            const saveApiKey = useCallback((key) => {
+                setApiKey(key);
+                if (key.trim()) {
+                    localStorage.setItem('claude_api_key', key);
+                } else {
+                    localStorage.removeItem('claude_api_key');
+                }
+            }, []);
+
+            const getNumericColumns = useCallback((d, h) => {
+                return h.filter(header => {
+                    const vals = d.map(r => r[header]).filter(v => v != null && v !== '');
+                    const nums = vals.filter(v => typeof v === 'number' || !isNaN(Number(v)));
+                    return nums.length / vals.length > 0.8 && vals.length > 0;
+                });
+            }, []);
+
+            const analyzeMissingValues = useCallback((d, h) => {
+                const total = d.length;
+                return h.map(header => {
+                    const missing = d.filter(r => r[header] == null || r[header] === '').length;
+                    return { column: header, missing, percent: parseFloat(((missing / total) * 100).toFixed(2)) };
+                }).filter(s => s.missing > 0).sort((a, b) => b.percent - a.percent);
+            }, []);
+
+            const detectOutliers = useCallback((d, h) => {
+                const numCols = getNumericColumns(d, h);
+                const stats = [];
+                numCols.forEach(col => {
+                    const vals = d.map(r => Number(r[col])).filter(v => !isNaN(v)).sort((a, b) => a - b);
+                    if (vals.length < 4) return;
+                    const q1 = vals[Math.floor(vals.length * 0.25)];
+                    const q3 = vals[Math.floor(vals.length * 0.75)];
+                    const iqr = q3 - q1;
+                    const lower = q1 - 1.5 * iqr;
+                    const upper = q3 + 1.5 * iqr;
+                    const outliers = vals.filter(v => v < lower || v > upper);
+                    if (outliers.length > 0) {
+                        stats.push({ column: col, count: outliers.length, percent: parseFloat(((outliers.length / vals.length) * 100).toFixed(2)), lowerBound: lower.toFixed(2), upperBound: upper.toFixed(2) });
+                    }
+                });
+                return stats.sort((a, b) => b.count - a.count);
+            }, [getNumericColumns]);
+
+            const detectClassImbalance = useCallback((d, h) => {
+                const results = [];
+                h.forEach(header => {
+                    const vals = d.map(r => r[header]).filter(v => v != null && v !== '');
+                    const unique = [...new Set(vals)];
+                    if (unique.length > 1 && unique.length < 20 && unique.length < vals.length * 0.5) {
+                        const counts = {};
+                        vals.forEach(v => counts[v] = (counts[v] || 0) + 1);
+                        const cnts = Object.values(counts);
+                        const ratio = Math.max(...cnts) / Math.min(...cnts);
+                        if (ratio > 2) {
+                            const dist = Object.entries(counts).map(([v, c]) => ({ value: String(v), count: c, percent: parseFloat(((c / vals.length) * 100).toFixed(2)) })).sort((a, b) => b.count - a.count);
+                            results.push({ column: header, imbalanceRatio: parseFloat(ratio.toFixed(2)), classes: unique.length, distribution: dist });
+                        }
+                    }
+                });
+                return results.sort((a, b) => b.imbalanceRatio - a.imbalanceRatio);
+            }, []);
+
+            const detectDataLeakage = useCallback((d, h) => {
+                const warnings = [];
+                const numCols = getNumericColumns(d, h);
+                for (let i = 0; i < numCols.length; i++) {
+                    for (let j = i + 1; j < numCols.length; j++) {
+                        const v1 = d.map(r => Number(r[numCols[i]])).filter(v => !isNaN(v));
+                        const v2 = d.map(r => Number(r[numCols[j]])).filter(v => !isNaN(v));
+                        if (v1.length === v2.length && v1.every((v, idx) => Math.abs(v - v2[idx]) < 0.0001)) {
+                            warnings.push({ type: 'Identical Columns', columns: [numCols[i], numCols[j]], severity: 'high', message: `"${numCols[i]}" and "${numCols[j]}" are identical` });
+                        }
+                    }
+                }
+                const rowStr = d.map(r => JSON.stringify(r));
+                const dupCount = rowStr.length - new Set(rowStr).size;
+                if (dupCount > 0) {
+                    warnings.push({ type: 'Duplicate Rows', severity: dupCount / d.length > 0.1 ? 'high' : 'medium', message: `${dupCount} duplicate rows (${((dupCount / d.length) * 100).toFixed(2)}%)` });
+                }
+                const suspicious = h.filter(hd => /^(id|index|row|number|seq|key)$/i.test(hd.toLowerCase().trim()));
+                if (suspicious.length > 0) {
+                    warnings.push({ type: 'Suspicious Names', columns: suspicious, severity: 'low', message: `ID-like columns: ${suspicious.join(', ')}` });
+                }
+                return warnings;
+            }, [getNumericColumns]);
+
+            const calculateHealthScore = useCallback((missing, outliers, imbalance, leakage, d, h) => {
+                let score = 100;
+                const breakdown = { missing: 0, outliers: 0, imbalance: 0, leakage: 0 };
+                const avgMissing = missing.reduce((s, m) => s + m.percent, 0) / h.length;
+                breakdown.missing = Math.min(30, avgMissing * 0.6);
+                score -= breakdown.missing;
+                const avgOutliers = outliers.reduce((s, o) => s + o.percent, 0) / (outliers.length || 1);
+                breakdown.outliers = Math.min(20, avgOutliers * 0.4);
+                score -= breakdown.outliers;
+                const maxImbalance = imbalance.length > 0 ? Math.max(...imbalance.map(i => i.imbalanceRatio)) : 0;
+                breakdown.imbalance = Math.min(20, Math.max(0, (maxImbalance - 2) * 2));
+                score -= breakdown.imbalance;
+                const high = leakage.filter(w => w.severity === 'high').length;
+                const med = leakage.filter(w => w.severity === 'medium').length;
+                breakdown.leakage = Math.min(30, high * 15 + med * 5);
+                score -= breakdown.leakage;
+                score = Math.max(0, Math.min(100, score));
+                return { score: Math.round(score), breakdown, grade: score >= 80 ? 'A' : score >= 70 ? 'B' : score >= 60 ? 'C' : score >= 50 ? 'D' : 'F' };
+            }, []);
+
+            const generateAIInsights = useCallback(async () => {
+                if (!apiKey.trim()) {
+                    alert('Please enter your Claude API key first');
+                    return;
+                }
+                setGeneratingInsights(true);
+                setAiInsights(null);
+                try {
+                    const prompt = `Analyze this dataset quality report and provide actionable recommendations:
+
+Dataset: ${fileInfo.name}
+Rows: ${fileInfo.rows}, Columns: ${fileInfo.columns}
+Health Score: ${analysisResults.healthScore.score}/100 (Grade ${analysisResults.healthScore.grade})
+
+Missing Values: ${analysisResults.missing.length} columns affected
+${analysisResults.missing.slice(0, 3).map(m => `- ${m.column}: ${m.percent}% missing`).join('\n')}
+
+Outliers: ${analysisResults.outliers.length} numeric columns with outliers
+${analysisResults.outliers.slice(0, 3).map(o => `- ${o.column}: ${o.count} outliers (${o.percent}%)`).join('\n')}
+
+Class Imbalance: ${analysisResults.imbalance.length} imbalanced columns
+${analysisResults.imbalance.slice(0, 2).map(i => `- ${i.column}: ${i.imbalanceRatio}x ratio`).join('\n')}
+
+Data Leakage: ${analy
