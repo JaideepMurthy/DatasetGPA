@@ -8,767 +8,259 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif; }
-    </style>
 </head>
 <body>
     <div id="root"></div>
-    
-    <script type="text/babel">
-        const { useState, useCallback, useEffect } = React;
-        const { Upload, FileText, AlertCircle, Database, ChevronDown, ChevronUp, AlertTriangle, Activity, Target, Shield, Sparkles, Download, Key, Eye, EyeOff } = lucide;
-
-        function Icon({ name, ...props }) {
-            const LucideIcon = lucide[name];
-            return LucideIcon ? React.createElement(LucideIcon, props) : null;
-        }
+    <script>
+        const { useState } = React;
+        const { Upload, Activity, AlertCircle } = lucide;
 
         function DatasetGPA() {
             const [file, setFile] = useState(null);
             const [data, setData] = useState([]);
-            const [headers, setHeaders] = useState([]);
-            const [fileInfo, setFileInfo] = useState(null);
-            const [isDragging, setIsDragging] = useState(false);
             const [error, setError] = useState(null);
             const [loading, setLoading] = useState(false);
-            const [currentPage, setCurrentPage] = useState(1);
-            const [analysisResults, setAnalysisResults] = useState(null);
-            const [apiKey, setApiKey] = useState('');
-            const [showApiKey, setShowApiKey] = useState(false);
-            const [aiInsights, setAiInsights] = useState(null);
-            const [generatingInsights, setGeneratingInsights] = useState(false);
-            const [expanded, setExpanded] = useState({ score: true, missing: true, outliers: true, imbalance: true, leakage: true, insights: false, preview: false });
-            const rowsPerPage = 10;
+            const [analysis, setAnalysis] = useState(null);
 
-            useEffect(() => {
-                const savedKey = localStorage.getItem('claude_api_key');
-                if (savedKey) setApiKey(savedKey);
-            }, []);
-
-            const saveApiKey = useCallback((key) => {
-                setApiKey(key);
-                if (key.trim()) {
-                    localStorage.setItem('claude_api_key', key);
-                } else {
-                    localStorage.removeItem('claude_api_key');
-                }
-            }, []);
-
-            const getNumericColumns = useCallback((d, h) => {
-                return h.filter(header => {
-                    const vals = d.map(r => r[header]).filter(v => v != null && v !== '');
-                    const nums = vals.filter(v => typeof v === 'number' || !isNaN(Number(v)));
-                    return nums.length / vals.length > 0.8 && vals.length > 0;
-                });
-            }, []);
-
-            const analyzeMissingValues = useCallback((d, h) => {
-                const total = d.length;
-                return h.map(header => {
-                    const missing = d.filter(r => r[header] == null || r[header] === '').length;
-                    return { column: header, missing, percent: parseFloat(((missing / total) * 100).toFixed(2)) };
-                }).filter(s => s.missing > 0).sort((a, b) => b.percent - a.percent);
-            }, []);
-
-            const detectOutliers = useCallback((d, h) => {
-                const numCols = getNumericColumns(d, h);
-                const stats = [];
-                numCols.forEach(col => {
-                    const vals = d.map(r => Number(r[col])).filter(v => !isNaN(v)).sort((a, b) => a - b);
-                    if (vals.length < 4) return;
-                    const q1 = vals[Math.floor(vals.length * 0.25)];
-                    const q3 = vals[Math.floor(vals.length * 0.75)];
-                    const iqr = q3 - q1;
-                    const lower = q1 - 1.5 * iqr;
-                    const upper = q3 + 1.5 * iqr;
-                    const outliers = vals.filter(v => v < lower || v > upper);
-                    if (outliers.length > 0) {
-                        stats.push({ column: col, count: outliers.length, percent: parseFloat(((outliers.length / vals.length) * 100).toFixed(2)), lowerBound: lower.toFixed(2), upperBound: upper.toFixed(2) });
-                    }
-                });
-                return stats.sort((a, b) => b.count - a.count);
-            }, [getNumericColumns]);
-
-            const detectClassImbalance = useCallback((d, h) => {
-                const results = [];
-                h.forEach(header => {
-                    const vals = d.map(r => r[header]).filter(v => v != null && v !== '');
-                    const unique = [...new Set(vals)];
-                    if (unique.length > 1 && unique.length < 20 && unique.length < vals.length * 0.5) {
-                        const counts = {};
-                        vals.forEach(v => counts[v] = (counts[v] || 0) + 1);
-                        const cnts = Object.values(counts);
-                        const ratio = Math.max(...cnts) / Math.min(...cnts);
-                        if (ratio > 2) {
-                            const dist = Object.entries(counts).map(([v, c]) => ({ value: String(v), count: c, percent: parseFloat(((c / vals.length) * 100).toFixed(2)) })).sort((a, b) => b.count - a.count);
-                            results.push({ column: header, imbalanceRatio: parseFloat(ratio.toFixed(2)), classes: unique.length, distribution: dist });
-                        }
-                    }
-                });
-                return results.sort((a, b) => b.imbalanceRatio - a.imbalanceRatio);
-            }, []);
-
-            const detectDataLeakage = useCallback((d, h) => {
-                const warnings = [];
-                const numCols = getNumericColumns(d, h);
-                for (let i = 0; i < numCols.length; i++) {
-                    for (let j = i + 1; j < numCols.length; j++) {
-                        const v1 = d.map(r => Number(r[numCols[i]])).filter(v => !isNaN(v));
-                        const v2 = d.map(r => Number(r[numCols[j]])).filter(v => !isNaN(v));
-                        if (v1.length === v2.length && v1.every((v, idx) => Math.abs(v - v2[idx]) < 0.0001)) {
-                            warnings.push({ type: 'Identical Columns', columns: [numCols[i], numCols[j]], severity: 'high', message: `"${numCols[i]}" and "${numCols[j]}" are identical` });
-                        }
-                    }
-                }
-                const rowStr = d.map(r => JSON.stringify(r));
-                const dupCount = rowStr.length - new Set(rowStr).size;
-                if (dupCount > 0) {
-                    warnings.push({ type: 'Duplicate Rows', severity: dupCount / d.length > 0.1 ? 'high' : 'medium', message: `${dupCount} duplicate rows (${((dupCount / d.length) * 100).toFixed(2)}%)` });
-                }
-                const suspicious = h.filter(hd => /^(id|index|row|number|seq|key)$/i.test(hd.toLowerCase().trim()));
-                if (suspicious.length > 0) {
-                    warnings.push({ type: 'Suspicious Names', columns: suspicious, severity: 'low', message: `ID-like columns: ${suspicious.join(', ')}` });
-                }
-                return warnings;
-            }, [getNumericColumns]);
-
-            const calculateHealthScore = useCallback((missing, outliers, imbalance, leakage, d, h) => {
-                let score = 100;
-                const breakdown = { missing: 0, outliers: 0, imbalance: 0, leakage: 0 };
-                const avgMissing = missing.reduce((s, m) => s + m.percent, 0) / h.length;
-                breakdown.missing = Math.min(30, avgMissing * 0.6);
-                score -= breakdown.missing;
-                const avgOutliers = outliers.reduce((s, o) => s + o.percent, 0) / (outliers.length || 1);
-                breakdown.outliers = Math.min(20, avgOutliers * 0.4);
-                score -= breakdown.outliers;
-                const maxImbalance = imbalance.length > 0 ? Math.max(...imbalance.map(i => i.imbalanceRatio)) : 0;
-                breakdown.imbalance = Math.min(20, Math.max(0, (maxImbalance - 2) * 2));
-                score -= breakdown.imbalance;
-                const high = leakage.filter(w => w.severity === 'high').length;
-                const med = leakage.filter(w => w.severity === 'medium').length;
-                breakdown.leakage = Math.min(30, high * 15 + med * 5);
-                score -= breakdown.leakage;
-                score = Math.max(0, Math.min(100, score));
-                return { score: Math.round(score), breakdown, grade: score >= 80 ? 'A' : score >= 70 ? 'B' : score >= 60 ? 'C' : score >= 50 ? 'D' : 'F' };
-            }, []);
-
-            const generateAIInsights = useCallback(async () => {
-                if (!apiKey.trim()) {
-                    alert('Please enter your Claude API key first');
+            const handleFileSelect = (selectedFile) => {
+                if (!selectedFile) return;
+                if (!selectedFile.name.endsWith('.csv')) {
+                    setError('Please upload a CSV file');
                     return;
                 }
-                setGeneratingInsights(true);
-                setAiInsights(null);
-                try {
-                    const prompt = `Analyze this dataset quality report and provide actionable recommendations:
-
-Dataset: ${fileInfo.name}
-Rows: ${fileInfo.rows}, Columns: ${fileInfo.columns}
-Health Score: ${analysisResults.healthScore.score}/100 (Grade ${analysisResults.healthScore.grade})
-
-Missing Values: ${analysisResults.missing.length} columns affected
-${analysisResults.missing.slice(0, 3).map(m => `- ${m.column}: ${m.percent}% missing`).join('\n')}
-
-Outliers: ${analysisResults.outliers.length} numeric columns with outliers
-${analysisResults.outliers.slice(0, 3).map(o => `- ${o.column}: ${o.count} outliers (${o.percent}%)`).join('\n')}
-
-Class Imbalance: ${analysisResults.imbalance.length} imbalanced columns
-${analysisResults.imbalance.slice(0, 2).map(i => `- ${i.column}: ${i.imbalanceRatio}x ratio`).join('\n')}
-
-Data Leakage: ${analysisResults.leakage.length} issues
-${analysisResults.leakage.map(l => `- ${l.type}: ${l.message}`).join('\n')}
-
-Provide: 1) Top 3 critical issues 2) Recommendations 3) ML impact 4) Next steps`;
-
-                    const response = await fetch('https://api.anthropic.com/v1/messages', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'x-api-key': apiKey,
-                            'anthropic-version': '2023-06-01'
-                        },
-                        body: JSON.stringify({
-                            model: 'claude-sonnet-4-20250514',
-                            max_tokens: 2000,
-                            messages: [{ role: 'user', content: prompt }]
-                        })
-                    });
-                    if (!response.ok) throw new Error(`API Error: ${response.status}`);
-                    const result = await response.json();
-                    setAiInsights(result.content[0].text);
-                    setExpanded(prev => ({ ...prev, insights: true }));
-                } catch (err) {
-                    alert(`Failed to generate insights: ${err.message}`);
-                } finally {
-                    setGeneratingInsights(false);
-                }
-            }, [apiKey, fileInfo, analysisResults]);
-
-            const exportReport = useCallback(() => {
-                const timestamp = new Date().toLocaleString();
-                let md = `# DatasetGPA Quality Report\n\n**Generated:** ${timestamp}\n**Dataset:** ${fileInfo.name}\n\n## Overview\n\n- Rows: ${fileInfo.rows.toLocaleString()}\n- Columns: ${fileInfo.columns}\n- Size: ${fileInfo.size} KB\n- Health Score: ${analysisResults.healthScore.score}/100 (Grade ${analysisResults.healthScore.grade})\n\n## Score Breakdown\n\n- Missing Values: -${analysisResults.healthScore.breakdown.missing.toFixed(1)}\n- Outliers: -${analysisResults.healthScore.breakdown.outliers.toFixed(1)}\n- Imbalance: -${analysisResults.healthScore.breakdown.imbalance.toFixed(1)}\n- Leakage: -${analysisResults.healthScore.breakdown.leakage.toFixed(1)}\n\n`;
-                
-                if (analysisResults.missing.length > 0) {
-                    md += `## Missing Values\n\n| Column | Missing | % |\n|--------|---------|---|\n`;
-                    analysisResults.missing.forEach(m => md += `| ${m.column} | ${m.missing} | ${m.percent}% |\n`);
-                    md += `\n`;
-                }
-                
-                if (analysisResults.outliers.length > 0) {
-                    md += `## Outliers (IQR Method)\n\n| Column | Count | % | Bounds |\n|--------|-------|---|--------|\n`;
-                    analysisResults.outliers.forEach(o => md += `| ${o.column} | ${o.count} | ${o.percent}% | [${o.lowerBound}, ${o.upperBound}] |\n`);
-                    md += `\n`;
-                }
-                
-                if (analysisResults.imbalance.length > 0) {
-                    md += `## Class Imbalance\n\n`;
-                    analysisResults.imbalance.forEach(i => {
-                        md += `### ${i.column}\n- Ratio: ${i.imbalanceRatio}x\n- Classes: ${i.classes}\n`;
-                        i.distribution.slice(0, 5).forEach(d => md += `  - ${d.value}: ${d.count} (${d.percent}%)\n`);
-                        md += `\n`;
-                    });
-                }
-                
-                if (analysisResults.leakage.length > 0) {
-                    md += `## Data Leakage Warnings\n\n`;
-                    analysisResults.leakage.forEach(w => md += `- **${w.type}** (${w.severity}): ${w.message}\n`);
-                    md += `\n`;
-                }
-                
-                if (aiInsights) {
-                    md += `## AI-Generated Insights\n\n${aiInsights}\n\n`;
-                }
-                
-                md += `---\n*Generated by DatasetGPA - Alameda Hacks 2025*`;
-                
-                const blob = new Blob([md], { type: 'text/markdown' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `${fileInfo.name.replace('.csv', '')}_quality_report.md`;
-                a.click();
-                URL.revokeObjectURL(url);
-            }, [fileInfo, analysisResults, aiInsights]);
-
-            const runAnalysis = useCallback((d, h) => {
-                const missing = analyzeMissingValues(d, h);
-                const outliers = detectOutliers(d, h);
-                const imbalance = detectClassImbalance(d, h);
-                const leakage = detectDataLeakage(d, h);
-                const healthScore = calculateHealthScore(missing, outliers, imbalance, leakage, d, h);
-                setAnalysisResults({ missing, outliers, imbalance, leakage, healthScore });
-            }, [analyzeMissingValues, detectOutliers, detectClassImbalance, detectDataLeakage, calculateHealthScore]);
-
-            const parseCSV = useCallback((file) => {
+                setFile(selectedFile);
                 setLoading(true);
                 setError(null);
-                Papa.parse(file, {
+
+                Papa.parse(selectedFile, {
                     header: true,
                     dynamicTyping: true,
                     skipEmptyLines: true,
-                    delimitersToGuess: [',', '\t', '|', ';'],
                     complete: (results) => {
                         if (results.data.length === 0) {
                             setError('CSV file is empty');
                             setLoading(false);
                             return;
                         }
-                        const cleanHeaders = results.meta.fields.map(h => h.trim());
-                        setHeaders(cleanHeaders);
                         setData(results.data);
-                        setFileInfo({
-                            name: file.name,
-                            size: (file.size / 1024).toFixed(2),
-                            rows: results.data.length,
-                            columns: cleanHeaders.length,
-                            uploadDate: new Date().toLocaleString()
-                        });
-                        runAnalysis(results.data, cleanHeaders);
+                        performAnalysis(results.data, results.meta.fields);
                         setLoading(false);
                     },
-                    error: (error) => {
-                        setError(`Error parsing CSV: ${error.message}`);
+                    error: (err) => {
+                        setError(`Error parsing CSV: ${err.message}`);
                         setLoading(false);
                     }
                 });
-            }, [runAnalysis]);
+            };
 
-            const handleFileSelect = useCallback((selectedFile) => {
-                if (!selectedFile) return;
-                if (!selectedFile.name.endsWith('.csv')) {
-                    setError('Please upload a CSV file');
-                    return;
-                }
-                if (selectedFile.size > 50 * 1024 * 1024) {
-                    setError('File must be less than 50MB');
-                    return;
-                }
-                setFile(selectedFile);
-                parseCSV(selectedFile);
-            }, [parseCSV]);
+            const performAnalysis = (rows, headers) => {
+                const totalRows = rows.length;
+                const totalCols = headers.length;
+                
+                let missingCount = 0;
+                rows.forEach(row => {
+                    headers.forEach(header => {
+                        if (!row[header]) missingCount++;
+                    });
+                });
+                const missingPercent = ((missingCount / (totalRows * totalCols)) * 100).toFixed(2);
+                
+                let score = 100 - (parseFloat(missingPercent) * 0.5);
+                score = Math.max(0, Math.min(100, score));
+                
+                setAnalysis({
+                    rows: totalRows,
+                    cols: totalCols,
+                    missingPercent,
+                    score: Math.round(score),
+                    grade: score >= 80 ? 'A' : score >= 60 ? 'B' : 'C'
+                });
+            };
 
             const resetState = () => {
                 setFile(null);
                 setData([]);
-                setHeaders([]);
-                setFileInfo(null);
                 setError(null);
-                setAnalysisResults(null);
-                setAiInsights(null);
-                setCurrentPage(1);
+                setAnalysis(null);
             };
 
-            const toggleSection = (section) => {
-                setExpanded(prev => ({ ...prev, [section]: !prev[section] }));
-            };
+            const uploadUI = React.createElement(
+                'div',
+                { className: 'min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-8' },
+                React.createElement(
+                    'div',
+                    { className: 'max-w-4xl mx-auto' },
+                    React.createElement(
+                        'div',
+                        { className: 'bg-white rounded-lg shadow-lg p-12' },
+                        React.createElement(
+                            'div',
+                            { className: 'flex items-center space-x-4 mb-8' },
+                            React.createElement(
+                                'div',
+                                { className: 'bg-blue-600 p-3 rounded-lg' },
+                                React.createElement(Activity, { className: 'w-8 h-8 text-white' })
+                            ),
+                            React.createElement(
+                                'div',
+                                null,
+                                React.createElement('h1', { className: 'text-4xl font-bold text-blue-600' }, 'DatasetGPA'),
+                                React.createElement('p', { className: 'text-gray-600 mt-1' }, 'AI-Powered Dataset Quality Analyzer')
+                            )
+                        ),
+                        React.createElement(
+                            'div',
+                            { className: 'space-y-6 mt-8' },
+                            React.createElement('h2', { className: 'text-2xl font-semibold text-gray-900 text-center' }, 'Upload Your Dataset'),
+                            React.createElement('p', { className: 'text-gray-600 text-center' }, 'Analyze CSV files for quality insights'),
+                            React.createElement(
+                                'div',
+                                { className: 'border-2 border-dashed border-gray-300 rounded-2xl p-12 text-center' },
+                                React.createElement(
+                                    'input',
+                                    { type: 'file', accept: '.csv', onChange: (e) => handleFileSelect(e.target.files[0]), id: 'file-upload', className: 'hidden', disabled: loading }
+                                ),
+                                React.createElement(
+                                    'label',
+                                    { htmlFor: 'file-upload', className: 'cursor-pointer block' },
+                                    React.createElement(
+                                        'div',
+                                        { className: 'space-y-4' },
+                                        React.createElement(
+                                            'div',
+                                            { className: 'mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center' },
+                                            React.createElement(Upload, { className: 'w-8 h-8 text-blue-600' })
+                                        ),
+                                        React.createElement('p', { className: 'text-lg font-medium text-gray-900' }, loading ? 'Processing...' : 'Drop CSV here or click'),
+                                        React.createElement('p', { className: 'text-sm text-gray-500' }, 'Max 50MB')
+                                    )
+                                )
+                            ),
+                            error && React.createElement(
+                                'div',
+                                { className: 'bg-red-50 border border-red-200 rounded-lg p-4' },
+                                React.createElement(
+                                    'div',
+                                    { className: 'flex items-start space-x-3' },
+                                    React.createElement(AlertCircle, { className: 'w-5 h-5 text-red-600' }),
+                                    React.createElement(
+                                        'div',
+                                        null,
+                                        React.createElement('h3', { className: 'font-medium text-red-900' }, 'Error'),
+                                        React.createElement('p', { className: 'text-sm text-red-700' }, error)
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            );
 
-            const getScoreColor = (score) => {
-                if (score >= 70) return 'from-green-500 to-emerald-600';
-                if (score >= 40) return 'from-yellow-500 to-orange-500';
-                return 'from-red-500 to-rose-600';
-            };
+            if (!file) return uploadUI;
 
-            const getScoreBg = (score) => {
-                if (score >= 70) return 'bg-green-50 border-green-200';
-                if (score >= 40) return 'bg-yellow-50 border-yellow-200';
-                return 'bg-red-50 border-red-200';
-            };
+            const resultUI = React.createElement(
+                'div',
+                { className: 'min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-8' },
+                React.createElement(
+                    'div',
+                    { className: 'max-w-4xl mx-auto' },
+                    React.createElement(
+                        'div',
+                        { className: 'bg-white rounded-lg shadow-lg p-8' },
+                        React.createElement(
+                            'div',
+                            { className: 'flex items-center justify-between mb-8' },
+                            React.createElement(
+                                'div',
+                                null,
+                                React.createElement('h2', { className: 'text-2xl font-bold text-gray-900' }, file.name),
+                                React.createElement('p', { className: 'text-gray-600 mt-1' }, `${data.length} rows | ${Object.keys(data[0] || {}).length} columns`)
+                            ),
+                            React.createElement('button', { onClick: resetState, className: 'px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600' }, 'New File')
+                        ),
+                        analysis && React.createElement(
+                            React.Fragment,
+                            null,
+                            React.createElement(
+                                'div',
+                                { className: 'bg-blue-50 rounded-lg p-8 mb-8 border-2 border-blue-200' },
+                                React.createElement(
+                                    'div',
+                                    { className: 'text-center' },
+                                    React.createElement('p', { className: 'text-gray-700 mb-2' }, 'Health Score'),
+                                    React.createElement(
+                                        'div',
+                                        { className: 'flex items-baseline justify-center gap-2' },
+                                        React.createElement('span', { className: 'text-6xl font-bold text-blue-600' }, analysis.score),
+                                        React.createElement('span', { className: 'text-2xl text-gray-600' }, '/100')
+                                    ),
+                                    React.createElement('span', { className: 'inline-block mt-3 px-3 py-1 bg-blue-200 text-blue-900 rounded font-bold text-sm' }, `Grade ${analysis.grade}`)
+                                )
+                            ),
+                            React.createElement(
+                                'div',
+                                { className: 'grid grid-cols-3 gap-4 mb-8' },
+                                React.createElement(
+                                    'div',
+                                    { className: 'bg-blue-50 p-6 rounded border border-blue-200' },
+                                    React.createElement('p', { className: 'text-sm text-blue-700 font-medium' }, 'Rows'),
+                                    React.createElement('p', { className: 'text-2xl font-bold text-blue-900' }, analysis.rows)
+                                ),
+                                React.createElement(
+                                    'div',
+                                    { className: 'bg-purple-50 p-6 rounded border border-purple-200' },
+                                    React.createElement('p', { className: 'text-sm text-purple-700 font-medium' }, 'Columns'),
+                                    React.createElement('p', { className: 'text-2xl font-bold text-purple-900' }, analysis.cols)
+                                ),
+                                React.createElement(
+                                    'div',
+                                    { className: 'bg-red-50 p-6 rounded border border-red-200' },
+                                    React.createElement('p', { className: 'text-sm text-red-700 font-medium' }, 'Missing'),
+                                    React.createElement('p', { className: 'text-2xl font-bold text-red-900' }, `${analysis.missingPercent}%`)
+                                )
+                            )
+                        ),
+                        data.length > 0 && React.createElement(
+                            'div',
+                            { className: 'bg-blue-50 border border-blue-200 rounded-lg p-6' },
+                            React.createElement('h3', { className: 'font-bold text-blue-900 mb-4' }, 'Data Preview'),
+                            React.createElement(
+                                'div',
+                                { className: 'overflow-x-auto' },
+                                React.createElement(
+                                    'table',
+                                    { className: 'w-full text-sm' },
+                                    React.createElement(
+                                        'thead',
+                                        { className: 'bg-blue-200' },
+                                        React.createElement(
+                                            'tr',
+                                            null,
+                                            Object.keys(data[0] || {}).slice(0, 5).map((col) => React.createElement('th', { className: 'px-3 py-2 text-left font-medium text-blue-900' }, col))
+                                        )
+                                    ),
+                                    React.createElement(
+                                        'tbody',
+                                        null,
+                                        data.slice(0, 3).map((row, i) => React.createElement(
+                                            'tr',
+                                            { key: i, className: 'border-t border-blue-200' },
+                                            Object.keys(data[0] || {}).slice(0, 5).map((col) => React.createElement('td', { className: 'px-3 py-2 text-gray-700' }, String(row[col] || '-').substring(0, 25)))
+                                        ))
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            );
 
-            const totalPages = Math.ceil(data.length / rowsPerPage);
-            const startIdx = (currentPage - 1) * rowsPerPage;
-            const endIdx = startIdx + rowsPerPage;
-            const currentData = data.slice(startIdx, endIdx);
+            return resultUI;
+        }
 
-            return (
-                <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
-                    <div className="bg-white shadow-sm border-b border-gray-200">
-                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-                            <div className="flex items-center justify-between flex-wrap gap-4">
-                                <div className="flex items-center space-x-3">
-                                    <div className="bg-gradient-to-br from-blue-500 to-purple-600 p-2 rounded-lg">
-                                        <Icon name="Database" className="w-8 h-8 text-white" />
-                                    </div>
-                                    <div>
-                                        <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                                            DatasetGPA
-                                        </h1>
-                                        <p className="text-sm text-gray-600">AI-Powered Dataset Quality Analyzer</p>
-                                    </div>
-                                </div>
-                                {fileInfo && (
-                                    <button
-                                        onClick={resetState}
-                                        className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all shadow-md"
-                                    >
-                                        Upload New File
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                        {!fileInfo ? (
-                            <div className="space-y-6">
-                                <div className="text-center">
-                                    <h2 className="text-2xl font-semibold text-gray-900 mb-2">Upload Your Dataset</h2>
-                                    <p className="text-gray-600">Get instant quality insights for your CSV data</p>
-                                </div>
-
-                                <div
-                                    onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-                                    onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
-                                    onDrop={(e) => { e.preventDefault(); setIsDragging(false); handleFileSelect(e.dataTransfer.files[0]); }}
-                                    className={`relative border-2 border-dashed rounded-2xl p-12 text-center transition-all ${isDragging ? 'border-blue-500 bg-blue-50 scale-105' : 'border-gray-300 bg-white hover:border-blue-400'}`}
-                                >
-                                    <input
-                                        type="file"
-                                        accept=".csv"
-                                        onChange={(e) => handleFileSelect(e.target.files[0])}
-                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                        disabled={loading}
-                                    />
-                                    <div className="space-y-4">
-                                        <div className="mx-auto w-20 h-20 bg-gradient-to-br from-blue-100 to-purple-100 rounded-full flex items-center justify-center">
-                                            <Icon name="Upload" className="w-10 h-10 text-blue-600" />
-                                        </div>
-                                        <div>
-                                            <p className="text-lg font-medium text-gray-900">
-                                                {loading ? 'Analyzing...' : 'Drop CSV here or click to browse'}
-                                            </p>
-                                            <p className="text-sm text-gray-500">Max 50MB</p>
-                                        </div>
-                                        {loading && (
-                                            <div className="flex items-center justify-center space-x-2">
-                                                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-                                                <span className="text-sm text-gray-600">Processing...</span>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {error && (
-                                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start space-x-3">
-                                        <Icon name="AlertCircle" className="w-5 h-5 text-red-600 flex-shrink-0" />
-                                        <div>
-                                            <h3 className="font-medium text-red-900">Error</h3>
-                                            <p className="text-sm text-red-700">{error}</p>
-                                        </div>
-                                    </div>
-                                )}
-
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    <div className="bg-white rounded-lg p-6 shadow-sm border">
-                                        <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4">
-                                            <Icon name="Activity" className="w-6 h-6 text-blue-600" />
-                                        </div>
-                                        <h3 className="font-semibold text-gray-900 mb-2">Quality Analysis</h3>
-                                        <p className="text-sm text-gray-600">Detect missing values, outliers, and quality issues</p>
-                                    </div>
-                                    <div className="bg-white rounded-lg p-6 shadow-sm border">
-                                        <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mb-4">
-                                            <Icon name="TrendingUp" className="w-6 h-6 text-purple-600" />
-                                        </div>
-                                        <h3 className="font-semibold text-gray-900 mb-2">Health Score</h3>
-                                        <p className="text-sm text-gray-600">Comprehensive 0-100 dataset quality rating</p>
-                                    </div>
-                                    <div className="bg-white rounded-lg p-6 shadow-sm border">
-                                        <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mb-4">
-                                            <Icon name="Sparkles" className="w-6 h-6 text-green-600" />
-                                        </div>
-                                        <h3 className="font-semibold text-gray-900 mb-2">AI Insights</h3>
-                                        <p className="text-sm text-gray-600">Claude AI generates actionable recommendations</p>
-                                    </div>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="space-y-6">
-                                {/* Health Score */}
-                                {analysisResults && (
-                                    <div className={`rounded-xl shadow-lg border-2 overflow-hidden ${getScoreBg(analysisResults.healthScore.score)}`}>
-                                        <div className="p-6 cursor-pointer" onClick={() => toggleSection('score')}>
-                                            <div className="flex items-center justify-between mb-4">
-                                                <div className="flex items-center space-x-3">
-                                                    <div className={`bg-gradient-to-br ${getScoreColor(analysisResults.healthScore.score)} p-3 rounded-lg`}>
-                                                        <Icon name="Activity" className="w-6 h-6 text-white" />
-                                                    </div>
-                                                    <div>
-                                                        <h3 className="text-xl font-bold text-gray-900">Dataset Health Score</h3>
-                                                        <p className="text-sm text-gray-600">Overall quality assessment</p>
-                                                    </div>
-                                                </div>
-                                                <Icon name={expanded.score ? "ChevronUp" : "ChevronDown"} className="w-5 h-5 text-gray-600" />
-                                            </div>
-                                            <div className="flex items-end space-x-4">
-                                                <div className={`text-6xl font-bold bg-gradient-to-r ${getScoreColor(analysisResults.healthScore.score)} bg-clip-text text-transparent`}>
-                                                    {analysisResults.healthScore.score}
-                                                </div>
-                                                <div className="pb-2">
-                                                    <span className="text-3xl font-bold text-gray-600">/100</span>
-                                                    <span className={`ml-3 text-2xl font-bold px-3 py-1 rounded-lg ${
-                                                        analysisResults.healthScore.grade === 'A' ? 'bg-green-200 text-green-800' :
-                                                        analysisResults.healthScore.grade === 'B' ? 'bg-blue-200 text-blue-800' :
-                                                        analysisResults.healthScore.grade === 'C' ? 'bg-yellow-200 text-yellow-800' :
-                                                        'bg-red-200 text-red-800'
-                                                    }`}>
-                                                        Grade {analysisResults.healthScore.grade}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <div className="mt-6 bg-gray-200 rounded-full h-4 overflow-hidden">
-                                                <div 
-                                                    className={`h-full bg-gradient-to-r ${getScoreColor(analysisResults.healthScore.score)} transition-all duration-1000`}
-                                                    style={{ width: `${analysisResults.healthScore.score}%` }}
-                                                ></div>
-                                            </div>
-                                        </div>
-                                        {expanded.score && (
-                                            <div className="border-t bg-white p-6">
-                                                <h4 className="font-semibold text-gray-900 mb-4">Score Breakdown</h4>
-                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                                    <div className="bg-gray-50 rounded-lg p-4">
-                                                        <p className="text-xs text-gray-600 mb-1">Missing Values</p>
-                                                        <p className="text-lg font-bold text-red-600">-{analysisResults.healthScore.breakdown.missing.toFixed(1)}</p>
-                                                    </div>
-                                                    <div className="bg-gray-50 rounded-lg p-4">
-                                                        <p className="text-xs text-gray-600 mb-1">Outliers</p>
-                                                        <p className="text-lg font-bold text-orange-600">-{analysisResults.healthScore.breakdown.outliers.toFixed(1)}</p>
-                                                    </div>
-                                                    <div className="bg-gray-50 rounded-lg p-4">
-                                                        <p className="text-xs text-gray-600 mb-1">Imbalance</p>
-                                                        <p className="text-lg font-bold text-yellow-600">-{analysisResults.healthScore.breakdown.imbalance.toFixed(1)}</p>
-                                                    </div>
-                                                    <div className="bg-gray-50 rounded-lg p-4">
-                                                        <p className="text-xs text-gray-600 mb-1">Leakage</p>
-                                                        <p className="text-lg font-bold text-purple-600">-{analysisResults.healthScore.breakdown.leakage.toFixed(1)}</p>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-
-                                {/* File Info */}
-                                <div className="bg-white rounded-xl shadow-sm border p-6">
-                                    <div className="flex items-center space-x-3 mb-4">
-                                        <div className="bg-blue-100 p-2 rounded-lg">
-                                            <Icon name="FileText" className="w-6 h-6 text-blue-600" />
-                                        </div>
-                                        <div>
-                                            <h3 className="font-semibold text-gray-900">{fileInfo.name}</h3>
-                                            <p className="text-sm text-gray-500">{fileInfo.uploadDate}</p>
-                                        </div>
-                                    </div>
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                        <div className="bg-blue-50 rounded-lg p-4">
-                                            <p className="text-sm text-blue-600 font-medium mb-1">Rows</p>
-                                            <p className="text-2xl font-bold text-blue-900">{fileInfo.rows.toLocaleString()}</p>
-                                        </div>
-                                        <div className="bg-purple-50 rounded-lg p-4">
-                                            <p className="text-sm text-purple-600 font-medium mb-1">Columns</p>
-                                            <p className="text-2xl font-bold text-purple-900">{fileInfo.columns}</p>
-                                        </div>
-                                        <div className="bg-green-50 rounded-lg p-4">
-                                            <p className="text-sm text-green-600 font-medium mb-1">Size</p>
-                                            <p className="text-2xl font-bold text-green-900">{fileInfo.size} KB</p>
-                                        </div>
-                                        <div className="bg-orange-50 rounded-lg p-4">
-                                            <p className="text-sm text-orange-600 font-medium mb-1">Cells</p>
-                                            <p className="text-2xl font-bold text-orange-900">{(fileInfo.rows * fileInfo.columns).toLocaleString()}</p>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* API Key & Actions */}
-                                <div className="bg-white rounded-xl shadow-sm border p-6">
-                                    <h3 className="font-semibold text-gray-900 mb-4">AI Insights & Export</h3>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">Claude API Key (Optional)</label>
-                                            <div className="flex space-x-2">
-                                                <div className="relative flex-1">
-                                                    <input
-                                                        type={showApiKey ? "text" : "password"}
-                                                        value={apiKey}
-                                                        onChange={(e) => saveApiKey(e.target.value)}
-                                                        placeholder="sk-ant-..."
-                                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                                    />
-                                                    <button
-                                                        onClick={() => setShowApiKey(!showApiKey)}
-                                                        className="absolute right-2 top-2.5 text-gray-400 hover:text-gray-600"
-                                                    >
-                                                        <Icon name={showApiKey ? "EyeOff" : "Eye"} className="w-5 h-5" />
-                                                    </button>
-                                                </div>
-                                                <button
-                                                    onClick={generateAIInsights}
-                                                    disabled={!apiKey.trim() || generatingInsights}
-                                                    className="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
-                                                >
-                                                    <Icon name="Sparkles" className="w-5 h-5" />
-                                                    <span>{generatingInsights ? 'Generating...' : 'Generate'}</span>
-                                                </button>
-                                            </div>
-                                            <p className="text-xs text-gray-500 mt-1">Get AI-powered recommendations from Claude</p>
-                                        </div>
-                                        <div className="flex items-end">
-                                            <button
-                                                onClick={exportReport}
-                                                className="w-full px-4 py-2 bg-gradient-to-r from-green-500 to-teal-500 text-white rounded-lg hover:from-green-600 hover:to-teal-600 flex items-center justify-center space-x-2"
-                                            >
-                                                <Icon name="Download" className="w-5 h-5" />
-                                                <span>Export Report (Markdown)</span>
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* AI Insights */}
-                                {aiInsights && (
-                                    <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-                                        <div className="p-6 cursor-pointer bg-purple-50 border-b" onClick={() => toggleSection('insights')}>
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center space-x-3">
-                                                    <Icon name="Sparkles" className="w-6 h-6 text-purple-600" />
-                                                    <h3 className="font-semibold text-gray-900">AI-Generated Insights</h3>
-                                                </div>
-                                                <Icon name={expanded.insights ? "ChevronUp" : "ChevronDown"} className="w-5 h-5 text-gray-600" />
-                                            </div>
-                                        </div>
-                                        {expanded.insights && (
-                                            <div className="p-6">
-                                                <div className="prose prose-sm max-w-none">
-                                                    <pre className="whitespace-pre-wrap font-sans text-sm text-gray-700">{aiInsights}</pre>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-
-                                {/* Missing Values */}
-                                {analysisResults && analysisResults.missing.length > 0 && (
-                                    <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-                                        <div className="p-6 cursor-pointer bg-red-50 border-b" onClick={() => toggleSection('missing')}>
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center space-x-3">
-                                                    <Icon name="AlertTriangle" className="w-6 h-6 text-red-600" />
-                                                    <div>
-                                                        <h3 className="font-semibold text-gray-900">Missing Values</h3>
-                                                        <p className="text-sm text-gray-600">{analysisResults.missing.length} columns affected</p>
-                                                    </div>
-                                                </div>
-                                                <Icon name={expanded.missing ? "ChevronUp" : "ChevronDown"} className="w-5 h-5 text-gray-600" />
-                                            </div>
-                                        </div>
-                                        {expanded.missing && (
-                                            <div className="p-6">
-                                                <table className="w-full">
-                                                    <thead className="bg-gray-50 border-b">
-                                                        <tr>
-                                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Column</th>
-                                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Missing</th>
-                                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Percentage</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody className="divide-y">
-                                                        {analysisResults.missing.map((m, i) => (
-                                                            <tr key={i} className="hover:bg-gray-50">
-                                                                <td className="px-6 py-4 text-sm font-medium text-gray-900">{m.column}</td>
-                                                                <td className="px-6 py-4 text-sm text-gray-600">{m.missing}</td>
-                                                                <td className="px-6 py-4 text-sm">
-                                                                    <div className="flex items-center space-x-2">
-                                                                        <div className="flex-1 bg-gray-200 rounded-full h-2 max-w-[100px]">
-                                                                            <div className="bg-red-500 h-2 rounded-full" style={{ width: `${Math.min(100, m.percent)}%` }}></div>
-                                                                        </div>
-                                                                        <span className="font-medium">{m.percent}%</span>
-                                                                    </div>
-                                                                </td>
-                                                            </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-
-                                {/* Outliers */}
-                                {analysisResults && analysisResults.outliers.length > 0 && (
-                                    <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-                                        <div className="p-6 cursor-pointer bg-orange-50 border-b" onClick={() => toggleSection('outliers')}>
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center space-x-3">
-                                                    <Icon name="BarChart" className="w-6 h-6 text-orange-600" />
-                                                    <div>
-                                                        <h3 className="font-semibold text-gray-900">Outliers (IQR Method)</h3>
-                                                        <p className="text-sm text-gray-600">{analysisResults.outliers.length} columns with outliers</p>
-                                                    </div>
-                                                </div>
-                                                <Icon name={expanded.outliers ? "ChevronUp" : "ChevronDown"} className="w-5 h-5 text-gray-600" />
-                                            </div>
-                                        </div>
-                                        {expanded.outliers && (
-                                            <div className="p-6">
-                                                <table className="w-full">
-                                                    <thead className="bg-gray-50 border-b">
-                                                        <tr>
-                                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Column</th>
-                                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Count</th>
-                                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">%</th>
-                                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bounds</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody className="divide-y">
-                                                        {analysisResults.outliers.map((o, i) => (
-                                                            <tr key={i} className="hover:bg-gray-50">
-                                                                <td className="px-6 py-4 text-sm font-medium text-gray-900">{o.column}</td>
-                                                                <td className="px-6 py-4 text-sm text-gray-600">{o.count}</td>
-                                                                <td className="px-6 py-4 text-sm">{o.percent}%</td>
-                                                                <td className="px-6 py-4 text-sm text-gray-600">[{o.lowerBound}, {o.upperBound}]</td>
-                                                            </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-
-                                {/* Class Imbalance */}
-                                {analysisResults && analysisResults.imbalance.length > 0 && (
-                                    <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-                                        <div className="p-6 cursor-pointer bg-yellow-50 border-b" onClick={() => toggleSection('imbalance')}>
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center space-x-3">
-                                                    <Icon name="Target" className="w-6 h-6 text-yellow-600" />
-                                                    <div>
-                                                        <h3 className="font-semibold text-gray-900">Class Imbalance</h3>
-                                                        <p className="text-sm text-gray-600">{analysisResults.imbalance.length} imbalanced columns</p>
-                                                    </div>
-                                                </div>
-                                                <Icon name={expanded.imbalance ? "ChevronUp" : "ChevronDown"} className="w-5 h-5 text-gray-600" />
-                                            </div>
-                                        </div>
-                                        {expanded.imbalance && (
-                                            <div className="p-6 space-y-6">
-                                                {analysisResults.imbalance.map((im, i) => (
-                                                    <div key={i} className="border rounded-lg p-4">
-                                                        <div className="flex justify-between mb-4">
-                                                            <h4 className="font-semibold text-gray-900">{im.column}</h4>
-                                                            <span className="text-sm text-gray-600">Ratio: {im.imbalanceRatio}x | Classes: {im.classes}</span>
-                                                        </div>
-                                                        <div className="space-y-2">
-                                                            {im.distribution.slice(0, 5).map((d, j) => (
-                                                                <div key={j} className="flex items-center space-x-3">
-                                                                    <span className="text-sm font-medium w-32 truncate">{d.value}</span>
-                                                                    <div className="flex-1 bg-gray-200 rounded-full h-6">
-                                                                        <div className="bg-yellow-500 h-6 rounded-full flex items-center justify-end px-2" style={{ width: `${d.percent}%` }}>
-                                                                            <span className="text-xs font-medium text-white">{d.percent}%</span>
-                                                                        </div>
-                                                                    </div>
-                                                                    <span className="text-sm w-20 text-right">{d.count}</span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-
-                                {/* Data Leakage */}
-                                {analysisResults && analysisResults.leakage.length > 0 && (
-                                    <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-                                        <div className="p-6 cursor-pointer bg-purple-50 border-b" onClick={() => toggleSection('leakage')}>
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center space-x-3">
-                                                    <Icon name="Shield" className="w-6 h-6 text-purple-600" />
-                                                    <div>
-                                                        <h3 className="font-semibold text-gray-900">Data Leakage Warnings</h3>
-                                                        <p className="text-sm text-gray-600">{analysisResults.leakage.length} potential issues</p>
-                                                    </div>
-                                                </div>
-                                                <Icon name={expanded.leakage ? "ChevronUp" : "ChevronDown"} className="w-5 h-5 text-gray-600" />
-                                            </div>
-                                        </div>
-                                        {expanded.leakage && (
-                                            <div className="p-6 space-y-4">
-                                                {analysisResults.leakage.map((
-
-)))}
-</div>
-</div>
-</div>
-</div>
-)
-}
-const root = ReactDOM.createRoot(document.getElementById('root')); root.render(<DatasetGPA />);
-                                        </script>
-    
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(React.createElement(DatasetGPA));
+    </script>
 </body>
 </html>
