@@ -1,261 +1,79 @@
-<!-- DEPLOYMENT TRIGGER -->
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DatasetGPA</title>
+    <title>DataQuality AI | Perfect Data, Faster ML</title>
+    <meta name="description" content="Ship ML models faster with automated CSV auditing and code-ready data fixes.">
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700;9..144,800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #2563EB;
+            --accent: #7C3AED;
+            --dark: #0F172A;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #F8FAFC;
+            color: #1E293B;
+            -webkit-font-smoothing: antialiased;
+        }
+        h1, h2, h3, .font-heading {
+            font-family: 'Fraunces', serif;
+        }
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .frost {
+            backdrop-filter: blur(10px);
+            background-color: rgba(255, 255, 255, 0.8);
+        }
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+        .animate-float {
+            animation: float 5s ease-in-out infinite;
+        }
+        .premium-shadow {
+            box-shadow: 0 4px 20px rgba(15, 23, 42, 0.08);
+        }
+        .premium-shadow-hover:hover {
+            box-shadow: 0 12px 40px rgba(15, 23, 42, 0.15);
+        }
+        .gradient-bg {
+            background: linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 100%);
+        }
+        .hero-gradient {
+            background: linear-gradient(to bottom right, #2563EB, #7C3AED);
+        }
+        .text-gradient {
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+            background-image: linear-gradient(to right, #2563EB, #7C3AED);
+        }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
+    "recharts": "https://esm.sh/recharts@^3.6.0",
+    "chart.js": "https://esm.sh/chart.js@^4.4.1",
+    "react-chartjs-2": "https://esm.sh/react-chartjs-2@^5.2.0"
+  }
+}
+</script>
 </head>
 <body>
     <div id="root"></div>
-    <script>
-        const { useState } = React;
-
-        function DatasetGPA() {
-            const [file, setFile] = useState(null);
-            const [data, setData] = useState([]);
-            const [error, setError] = useState(null);
-            const [loading, setLoading] = useState(false);
-            const [analysis, setAnalysis] = useState(null);
-
-            const handleFileSelect = (selectedFile) => {
-                if (!selectedFile) return;
-                if (!selectedFile.name.endsWith('.csv')) {
-                    setError('Please upload a CSV file');
-                    return;
-                }
-                setFile(selectedFile);
-                setLoading(true);
-                setError(null);
-                Papa.parse(selectedFile, {
-                    header: true,
-                    dynamicTyping: true,
-                    skipEmptyLines: true,
-                    complete: (results) => {
-                        if (results.data.length === 0) {
-                            setError('CSV file is empty');
-                            setLoading(false);
-                            return;
-                        }
-                        setData(results.data);
-                        performAnalysis(results.data, results.meta.fields);
-                        setLoading(false);
-                    },
-                    error: (err) => {
-                        setError(`Error parsing CSV: ${err.message}`);
-                        setLoading(false);
-                    }
-                });
-            };
-
-            const performAnalysis = (rows, headers) => {
-                const totalRows = rows.length;
-                const totalCols = headers.length;
-                let missingCount = 0;
-                rows.forEach(row => {
-                    headers.forEach(header => {
-                        if (!row[header]) missingCount++;
-                    });
-                });
-                const missingPercent = ((missingCount / (totalRows * totalCols)) * 100).toFixed(2);
-                let score = 100 - (parseFloat(missingPercent) * 0.5);
-                score = Math.max(0, Math.min(100, score));
-                setAnalysis({
-                    rows: totalRows,
-                    cols: totalCols,
-                    missingPercent,
-                    score: Math.round(score),
-                    grade: score >= 80 ? 'A' : score >= 60 ? 'B' : 'C'
-                });
-            };
-
-            const resetState = () => {
-                setFile(null);
-                setData([]);
-                setError(null);
-                setAnalysis(null);
-            };
-
-            const uploadUI = React.createElement(
-                'div',
-                { className: 'min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-8' },
-                React.createElement(
-                    'div',
-                    { className: 'max-w-4xl mx-auto' },
-                    React.createElement(
-                        'div',
-                        { className: 'bg-white rounded-lg shadow-lg p-12' },
-                        React.createElement(
-                            'div',
-                            { className: 'flex items-center space-x-4 mb-8' },
-                            React.createElement(
-                                'div',
-                                { className: 'bg-blue-600 p-3 rounded-lg text-white text-2xl' },
-                                '📊'
-                            ),
-                            React.createElement(
-                                'div',
-                                null,
-                                React.createElement('h1', { className: 'text-4xl font-bold text-blue-600' }, 'DatasetGPA'),
-                                React.createElement('p', { className: 'text-gray-600 mt-1' }, 'AI-Powered Dataset Quality Analyzer')
-                            )
-                        ),
-                        React.createElement(
-                            'div',
-                            { className: 'space-y-6 mt-8' },
-                            React.createElement('h2', { className: 'text-2xl font-semibold text-gray-900 text-center' }, 'Upload Your Dataset'),
-                            React.createElement('p', { className: 'text-gray-600 text-center' }, 'Analyze CSV files for quality insights'),
-                            React.createElement(
-                                'div',
-                                { className: 'border-2 border-dashed border-gray-300 rounded-2xl p-12 text-center' },
-                                React.createElement(
-                                    'input',
-                                    { type: 'file', accept: '.csv', onChange: (e) => handleFileSelect(e.target.files[0]), id: 'file-upload', className: 'hidden', disabled: loading }
-                                ),
-                                React.createElement(
-                                    'label',
-                                    { htmlFor: 'file-upload', className: 'cursor-pointer block' },
-                                    React.createElement(
-                                        'div',
-                                        { className: 'space-y-4' },
-                                        React.createElement(
-                                            'div',
-                                            { className: 'mx-auto text-6xl' },
-                                            '📁'
-                                        ),
-                                        React.createElement('p', { className: 'text-lg font-medium text-gray-900' }, loading ? 'Processing...' : 'Drop CSV here or click'),
-                                        React.createElement('p', { className: 'text-sm text-gray-500' }, 'Max 50MB')
-                                    )
-                                )
-                            ),
-                            error && React.createElement(
-                                'div',
-                                { className: 'bg-red-50 border border-red-200 rounded-lg p-4' },
-                                React.createElement(
-                                    'div',
-                                    { className: 'flex items-start space-x-3' },
-                                    React.createElement('span', { className: 'text-red-600 text-2xl' }, '⚠️'),
-                                    React.createElement(
-                                        'div',
-                                        null,
-                                        React.createElement('h3', { className: 'font-medium text-red-900' }, 'Error'),
-                                        React.createElement('p', { className: 'text-sm text-red-700' }, error)
-                                    )
-                                )
-                            )
-                        )
-                    )
-                )
-            );
-
-            if (!file) return uploadUI;
-
-            const resultUI = React.createElement(
-                'div',
-                { className: 'min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-8' },
-                React.createElement(
-                    'div',
-                    { className: 'max-w-4xl mx-auto' },
-                    React.createElement(
-                        'div',
-                        { className: 'bg-white rounded-lg shadow-lg p-8' },
-                        React.createElement(
-                            'div',
-                            { className: 'flex items-center justify-between mb-8' },
-                            React.createElement(
-                                'div',
-                                null,
-                                React.createElement('h2', { className: 'text-2xl font-bold text-gray-900' }, file.name),
-                                React.createElement('p', { className: 'text-gray-600 mt-1' }, `${data.length} rows | ${Object.keys(data[0] || {}).length} columns`)
-                            ),
-                            React.createElement('button', { onClick: resetState, className: 'px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600' }, 'New File')
-                        ),
-                        analysis && React.createElement(
-                            React.Fragment,
-                            null,
-                            React.createElement(
-                                'div',
-                                { className: 'bg-blue-50 rounded-lg p-8 mb-8 border-2 border-blue-200' },
-                                React.createElement(
-                                    'div',
-                                    { className: 'text-center' },
-                                    React.createElement('p', { className: 'text-gray-700 mb-2' }, 'Health Score'),
-                                    React.createElement(
-                                        'div',
-                                        { className: 'flex items-baseline justify-center gap-2' },
-                                        React.createElement('span', { className: 'text-6xl font-bold text-blue-600' }, analysis.score),
-                                        React.createElement('span', { className: 'text-2xl text-gray-600' }, '/100')
-                                    ),
-                                    React.createElement('span', { className: 'inline-block mt-3 px-3 py-1 bg-blue-200 text-blue-900 rounded font-bold text-sm' }, `Grade ${analysis.grade}`)
-                                )
-                            ),
-                            React.createElement(
-                                'div',
-                                { className: 'grid grid-cols-3 gap-4 mb-8' },
-                                React.createElement(
-                                    'div',
-                                    { className: 'bg-blue-50 p-6 rounded border border-blue-200' },
-                                    React.createElement('p', { className: 'text-sm text-blue-700 font-medium' }, 'Rows'),
-                                    React.createElement('p', { className: 'text-2xl font-bold text-blue-900' }, analysis.rows)
-                                ),
-                                React.createElement(
-                                    'div',
-                                    { className: 'bg-purple-50 p-6 rounded border border-purple-200' },
-                                    React.createElement('p', { className: 'text-sm text-purple-700 font-medium' }, 'Columns'),
-                                    React.createElement('p', { className: 'text-2xl font-bold text-purple-900' }, analysis.cols)
-                                ),
-                                React.createElement(
-                                    'div',
-                                    { className: 'bg-red-50 p-6 rounded border border-red-200' },
-                                    React.createElement('p', { className: 'text-sm text-red-700 font-medium' }, 'Missing'),
-                                    React.createElement('p', { className: 'text-2xl font-bold text-red-900' }, `${analysis.missingPercent}%`)
-                                )
-                            ),
-                            data.length > 0 && React.createElement(
-                                'div',
-                                { className: 'bg-blue-50 border border-blue-200 rounded-lg p-6' },
-                                React.createElement('h3', { className: 'font-bold text-blue-900 mb-4' }, 'Data Preview'),
-                                React.createElement(
-                                    'div',
-                                    { className: 'overflow-x-auto' },
-                                    React.createElement(
-                                        'table',
-                                        { className: 'w-full text-sm' },
-                                        React.createElement(
-                                            'thead',
-                                            { className: 'bg-blue-200' },
-                                            React.createElement(
-                                                'tr',
-                                                null,
-                                                Object.keys(data[0] || {}).slice(0, 5).map((col) => React.createElement('th', { className: 'px-3 py-2 text-left font-medium text-blue-900' }, col))
-                                            )
-                                        ),
-                                        React.createElement(
-                                            'tbody',
-                                            null,
-                                            data.slice(0, 3).map((row, i) => React.createElement(
-                                                'tr',
-                                                { key: i, className: 'border-t border-blue-200' },
-                                                Object.keys(data[0] || {}).slice(0, 5).map((col) => React.createElement('td', { className: 'px-3 py-2 text-gray-700' }, String(row[col] || '-').substring(0, 25)))
-                                            ))
-                                        )
-                                    )
-                                )
-                            )
-                        )
-                    )
-                )
-            );
-
-            return resultUI;
-        }
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(React.createElement(DatasetGPA));
-    </script>
 </body>
 </html>
