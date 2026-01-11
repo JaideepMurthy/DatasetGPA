@@ -1,9 +1,9 @@
-# DatasetGPA - AI-Powered CSV Dataset Quality Analyzer
+[# DatasetGPA - AI-Powered CSV Dataset Quality Analyzer
 
 <div align="center">
 
 [![GitHub](https://img.shields.io/badge/github-%23121011.svg?style=for-the-badge&logo=github&logoColor=white)](https://github.com/JaideepMurthy/DatasetGPA)
-[![Vercel](https://img.shields.io/badge/vercel-%23000000.svg?style=for-the-badge&logo=vercel&logoColor=white)](https://datasetgpa-quality-analyzer-mh7a4brqo-jaideep-murthys-projects.vercel.app)
+[![Vercel](https://img.shields.io/badge/vercel-%23000000.svg?style=for-the-badge&logo=vercel&logoColor=white)](https://https://aistudio.google.com/apps/drive/1mX5KMIykNg0G6kjht_7CTSjwlSzq2yVR-jaideep-murthys-projects.vercel.app)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Instantly analyze CSV datasets and detect quality issues before training models**
@@ -73,7 +73,7 @@ Claude API generates specific, actionable suggestions:
 ## 🚀 Try It Out
 
 ### Live Demo
-[**Launch DatasetGPA**](https://datasetgpa-quality-analyzer-mh7a4brqo-jaideep-murthys-projects.vercel.app)
+[**Launch DatasetGPA**](https://https://aistudio.google.com/apps/drive/1mX5KMIykNg0G6kjht_7CTSjwlSzq2yVR-jaideep-murthys-projects.vercel.app)
 
 ### Quick Start (3 steps)
 
@@ -347,4 +347,5 @@ Just like how GPA measures academic performance, DatasetGPA measures dataset hea
 
 **Built with ❤️ by Jaideep Murthy**
 
-[Try DatasetGPA →](https://datasetgpa-quality-analyzer-mh7a4brqo-jaideep-murthys-projects.vercel.app)
+[Try DatasetGPA →](https://https://aistudio.google.com/apps/drive/1mX5KMIykNg0G6kjht_7CTSjwlSzq2yVR-jaideep-murthys-projects.vercel.app)
+](https://https://aistudio.google.com/apps/drive/1mX5KMIykNg0G6kjht_7CTSjwlSzq2yVR-jaideep-murthys-projects.vercel.app/)
