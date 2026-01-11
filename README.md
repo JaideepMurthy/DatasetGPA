@@ -73,7 +73,7 @@ Claude API generates specific, actionable suggestions:
 ## 🚀 Try It Out
 
 ### Live Demo
-[**Launch DatasetGPA**](https://https://aistudio.google.com/apps/drive/1mX5KMIykNg0G6kjht_7CTSjwlSzq2yVR-jaideep-murthys-projects.vercel.app)
+[**Launch DatasetGPA**](https://ai.studio/apps/drive/1mX5KMIykNg0G6kjht_7CTSjwlSzq2yVR?fullscreenApplet=true)
 
 ### Quick Start (3 steps)
 
